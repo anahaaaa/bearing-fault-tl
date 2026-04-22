@@ -1,0 +1,25 @@
+# Data files
+
+data/*.mat
+data/*.csv
+data/*.npy
+
+# Python Cache
+
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Virtual environment
+venv/
+env/
+.env
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs you don't want tracked
+*.log
+wandb/
