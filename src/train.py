@@ -134,6 +134,8 @@ def train_model(
 
     best_acc = 0.0
     best_model = copy.deepcopy(model.state_dict())
+    patience = 5
+    counter = 0
 
     history = {
         "train_loss": [],
@@ -181,7 +183,7 @@ def train_model(
         )
 
         # Save best model
-        if test_acc > best_acc:
+        if test_acc > best_acc + 1e-4:
 
             best_acc = test_acc
             best_model = copy.deepcopy(
@@ -196,6 +198,15 @@ def train_model(
             torch.save(best_model, save_path)
 
             print("Best model saved.")
+            counter = 0
+            
+        else:
+            
+            counter += 1
+
+        if counter >= patience:
+            print("Early stopping triggered.")
+            break
 
     # Load best model back
     model.load_state_dict(best_model)
