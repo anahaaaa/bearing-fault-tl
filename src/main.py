@@ -1,12 +1,18 @@
 # ==================================================
 # src/main.py
-# Automated Pipeline for ALL Signal Representations
-# raw / tsa / residual / envelope / difference
+# FINAL POLISHED VERSION
+# Full Automated Bearing Fault Diagnosis Pipeline
 # ==================================================
 
 import os
 import traceback
 import pandas as pd
+import torch
+
+# --------------------------------------------------
+# Imports
+# --------------------------------------------------
+
 from utils import set_seed, print_class_distribution
 from data_loader import load_cwru
 from segmentation import (
@@ -19,6 +25,7 @@ from class_weights import compute_class_weights
 from dataset import create_dataloader
 from model import build_model
 from train import train_model
+from evaluate import evaluate_model, DEFAULT_CLASS_NAMES
 from visualization import plot_all_representations
 
 
@@ -28,24 +35,35 @@ from visualization import plot_all_representations
 
 SEED = 42
 
+# --------------------------------------------------
+# DATASET PATHS
+# Update these when separate processed folders exist
+# --------------------------------------------------
+
 DATA_ROOT = "data"
 
 REPRESENTATION_PATHS = {
-    "raw":        f"{DATA_ROOT}/raw/CWRU_DATA",
-    "tsa":        f"{DATA_ROOT}/tsa/CWRU_DATA",
-    "residual":   f"{DATA_ROOT}/residual/CWRU_DATA",
-    "envelope":   f"{DATA_ROOT}/envelope/CWRU_DATA",
-    "difference": f"{DATA_ROOT}/difference/CWRU_DATA",
+    "raw":        f"{DATA_ROOT}/CWRU_DATA",
+    "tsa":        f"{DATA_ROOT}/CWRU_DATA",
+    "residual":   f"{DATA_ROOT}/CWRU_DATA",
+    "envelope":   f"{DATA_ROOT}/CWRU_DATA",
+    "difference": f"{DATA_ROOT}/CWRU_DATA",
 }
 
+# If only raw exists now:
 SIGNAL_TYPES = list(REPRESENTATION_PATHS.keys())
 
 WINDOW_SIZE = 1024
 OVERLAP = 0.5
+BATCH_SIZE = 64
 
 SOURCE_LOADS = [0]
 TARGET_LOADS = [3]
 
+EPOCHS = 30
+LR = 1e-3
+
+VISUALIZE = True
 VISUAL_LOAD = 0
 VISUAL_FILE = "IR_7_load0.mat"
 
@@ -54,7 +72,7 @@ RESULTS_FILE = "results/pipeline_summary.csv"
 
 
 # --------------------------------------------------
-# RUN ONE REPRESENTATION
+# RUN ONE SIGNAL TYPE
 # --------------------------------------------------
 
 def run_pipeline(signal_type):
@@ -69,7 +87,7 @@ def run_pipeline(signal_type):
         raise FileNotFoundError(f"Folder not found: {data_path}")
 
     # ----------------------------------------------
-    # Load Dataset
+    # Load Data
     # ----------------------------------------------
     domains = load_cwru(
         base_path=data_path,
@@ -80,7 +98,7 @@ def run_pipeline(signal_type):
     print_class_distribution(domains)
 
     # ----------------------------------------------
-    # Segment
+    # Segment Signals
     # ----------------------------------------------
     segmented_domains = segment_domains(
         domains=domains,
@@ -97,7 +115,7 @@ def run_pipeline(signal_type):
     segmented_domains = zscore_domains(segmented_domains)
 
     # ----------------------------------------------
-    # Merge Domains
+    # Merge Source / Target
     # ----------------------------------------------
     X_train, y_train = merge_domains(
         segmented_domains,
@@ -111,27 +129,27 @@ def run_pipeline(signal_type):
 
     # ----------------------------------------------
     # Add Channel Dimension
+    # (N,1024) -> (N,1,1024)
     # ----------------------------------------------
     X_train = add_channel_dimension(X_train)
     X_test = add_channel_dimension(X_test)
-    
-    # ----------------------------------------------
-    # Creating DataLoaders
-    # ----------------------------------------------
 
-    print("\n[8] Creating DataLoaders...")
-    
+    # ----------------------------------------------
+    # DataLoaders
+    # ----------------------------------------------
+    print("\nCreating DataLoaders...")
+
     train_loader = create_dataloader(
         X_train,
         y_train,
-        batch_size=64,
+        batch_size=BATCH_SIZE,
         shuffle=True
     )
-    
+
     test_loader = create_dataloader(
         X_test,
         y_test,
-        batch_size=64,
+        batch_size=BATCH_SIZE,
         shuffle=False
     )
 
@@ -145,46 +163,63 @@ def run_pipeline(signal_type):
 
     class_weights = compute_class_weights(source_samples)
 
-
     # ----------------------------------------------
     # Build Model
     # ----------------------------------------------
     print("\nBuilding ResNet1D model...")
-    
+
     model = build_model(num_classes=10)
-    
+
     # ----------------------------------------------
     # Train Model
     # ----------------------------------------------
     print("\nTraining model...")
-    
+
     save_path = f"results/{signal_type}_best_model.pth"
-    
+
     model, history = train_model(
         model=model,
         train_loader=train_loader,
         test_loader=test_loader,
         class_weights=class_weights,
-        epochs=30,
-        lr=1e-3,
+        epochs=EPOCHS,
+        lr=LR,
         save_path=save_path
     )
 
     # ----------------------------------------------
-    # Summary
+    # Evaluate
+    # ----------------------------------------------
+    print("\nEvaluating model...")
+
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+
+    metrics = evaluate_model(
+        model=model,
+        test_loader=test_loader,
+        device=device,
+        class_names=DEFAULT_CLASS_NAMES,
+        cm_save_path=f"results/{signal_type}_cm.png"
+    )
+
+    # ----------------------------------------------
+    # Final Summary
     # ----------------------------------------------
     print("\nFINAL SUMMARY")
     print("Signal Type :", signal_type)
     print("Train Shape :", X_train.shape)
     print("Test Shape  :", X_test.shape)
+    print("Accuracy    :", round(metrics["accuracy"], 4))
+    print("Macro F1    :", round(metrics["f1_macro"], 4))
 
-    best_acc = max(history["test_acc"])
-    
     return {
         "signal_type": signal_type,
         "train_samples": X_train.shape[0],
         "test_samples": X_test.shape[0],
-        "best_test_acc": round(best_acc, 4),
+        "accuracy": round(metrics["accuracy"], 4),
+        "f1_macro": round(metrics["f1_macro"], 4),
         "status": "success"
     }
 
@@ -202,27 +237,30 @@ def main():
     print("=" * 70)
 
     # ----------------------------------------------
-    # Visualize Once
+    # Visualization
     # ----------------------------------------------
-    print("\n[0] Visualizing all signal representations...")
+    if VISUALIZE:
 
-    try:
-        plot_all_representations(
-            raw_path=REPRESENTATION_PATHS["raw"],
-            tsa_path=REPRESENTATION_PATHS["tsa"],
-            residual_path=REPRESENTATION_PATHS["residual"],
-            envelope_path=REPRESENTATION_PATHS["envelope"],
-            difference_path=REPRESENTATION_PATHS["difference"],
-            load_id=VISUAL_LOAD,
-            filename=VISUAL_FILE,
-            start=0,
-            length=3000
-        )
-    except Exception as e:
-        print("Visualization skipped:", e)
+        print("\nVisualizing signal representations...")
+
+        try:
+            plot_all_representations(
+                raw_path=REPRESENTATION_PATHS["raw"],
+                tsa_path=REPRESENTATION_PATHS["tsa"],
+                residual_path=REPRESENTATION_PATHS["residual"],
+                envelope_path=REPRESENTATION_PATHS["envelope"],
+                difference_path=REPRESENTATION_PATHS["difference"],
+                load_id=VISUAL_LOAD,
+                filename=VISUAL_FILE,
+                start=0,
+                length=3000
+            )
+
+        except Exception as e:
+            print("Visualization skipped:", e)
 
     # ----------------------------------------------
-    # Run All Representations
+    # Run Experiments
     # ----------------------------------------------
     results = []
 
@@ -236,7 +274,6 @@ def main():
 
             print(f"\nFAILED: {signal_type}")
             print(e)
-
             traceback.print_exc()
 
             results.append({
@@ -245,7 +282,7 @@ def main():
             })
 
     # ----------------------------------------------
-    # Final Results Table
+    # Final Results
     # ----------------------------------------------
     print("\n" + "=" * 70)
     print("ALL RUNS COMPLETE")
