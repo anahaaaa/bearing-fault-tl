@@ -49,8 +49,20 @@ After downloading, place the `.mat` files inside this folder:
 
 ```text
 data/
-├── Normal_0.mat
-├── IR_7_load0.mat
-├── OR_14_load1.mat
-├── B_21_load3.mat
-└── ...
+└── CWRU_DATA/
+    ├── Load_0/
+    │   ├── B_7_load0.mat
+    │   ├── B_14_load0.mat
+    │   ├── B_21_load0.mat
+    │   ├── IR_7_load0.mat
+    │   ├── OR_7_load0.mat
+    │   └── ...
+    │
+    ├── Load_1/
+    │   └── ...
+    │
+    ├── Load_2/
+    │   └── ...
+    │
+    └── Load_3/
+        └── ...
