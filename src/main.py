@@ -10,6 +10,7 @@ import pandas as pd
 
 from utils import set_seed, print_class_distribution
 from data_loader import load_cwru
+from dataset import create_dataloader
 from segmentation import segment_domains, merge_domains, add_channel_dimension
 from preprocessing import zscore_domains
 from class_weights import compute_class_weights
@@ -108,6 +109,26 @@ def run_pipeline(signal_type):
     # ----------------------------------------------
     X_train = add_channel_dimension(X_train)
     X_test = add_channel_dimension(X_test)
+    
+    # ----------------------------------------------
+    # Creating DataLoaders
+    # ----------------------------------------------
+
+    print("\n[8] Creating DataLoaders...")
+    
+    train_loader = create_dataloader(
+        X_train,
+        y_train,
+        batch_size=64,
+        shuffle=True
+    )
+    
+    test_loader = create_dataloader(
+        X_test,
+        y_test,
+        batch_size=64,
+        shuffle=False
+    )
 
     # ----------------------------------------------
     # Compute Class Weights
