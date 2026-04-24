@@ -7,13 +7,18 @@
 import os
 import traceback
 import pandas as pd
-
 from utils import set_seed, print_class_distribution
 from data_loader import load_cwru
-from dataset import create_dataloader
-from segmentation import segment_domains, merge_domains, add_channel_dimension
+from segmentation import (
+    segment_domains,
+    merge_domains,
+    add_channel_dimension
+)
 from preprocessing import zscore_domains
 from class_weights import compute_class_weights
+from dataset import create_dataloader
+from model import build_model
+from train import train_model
 from visualization import plot_all_representations
 
 
@@ -140,6 +145,31 @@ def run_pipeline(signal_type):
 
     class_weights = compute_class_weights(source_samples)
 
+
+    # ----------------------------------------------
+    # Build Model
+    # ----------------------------------------------
+    print("\nBuilding ResNet1D model...")
+    
+    model = build_model(num_classes=10)
+    
+    # ----------------------------------------------
+    # Train Model
+    # ----------------------------------------------
+    print("\nTraining model...")
+    
+    save_path = f"results/{signal_type}_best_model.pth"
+    
+    model, history = train_model(
+        model=model,
+        train_loader=train_loader,
+        test_loader=test_loader,
+        class_weights=class_weights,
+        epochs=30,
+        lr=1e-3,
+        save_path=save_path
+    )
+
     # ----------------------------------------------
     # Summary
     # ----------------------------------------------
@@ -148,12 +178,13 @@ def run_pipeline(signal_type):
     print("Train Shape :", X_train.shape)
     print("Test Shape  :", X_test.shape)
 
+    best_acc = max(history["test_acc"])
+    
     return {
         "signal_type": signal_type,
         "train_samples": X_train.shape[0],
         "test_samples": X_test.shape[0],
-        "input_shape": X_train.shape[1:],
-        "num_classes": len(set(y_train)),
+        "best_test_acc": round(best_acc, 4),
         "status": "success"
     }
 
