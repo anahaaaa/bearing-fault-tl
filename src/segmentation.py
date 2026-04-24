@@ -158,4 +158,11 @@ def merge_domains(segmented_domains, loads):
 
     return X_all, y_all
 
-
+# Add channel dimension for CNN / ResNet input
+# (N,1024) -> (N,1,1024)
+# ----------------------------------------------------
+def add_channel_dimension(X):
+    """
+    Adds channel dimension for deep learning models.
+    """
+    return np.expand_dims(X, axis=1)
